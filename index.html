@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanner Renombrador</title>
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; text-align: center; background-color: #f4f4f9; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; }
+        .btn { background-color: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 10px 0; }
+        .btn:disabled { background-color: #ccc; }
+        #preview { max-width: 100%; margin-top: 10px; border: 2px solid #ddd; display: none; }
+        #status { margin: 15px 0; font-weight: bold; color: #555; }
+        .detected-box { border: 2px solid #28a745; padding: 10px; background: #e6ffec; display: none; margin-top:10px; }
+        .detected-number { font-size: 24px; color: #28a745; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Scanner de Notas</h1>
+    <p>Sube una foto o usa la cámara. El sistema detectará el N° de venta.</p>
+
+    <input type="file" id="uploader" accept="image/*" capture="environment" style="display:none">
+    <button class="btn" onclick="document.getElementById('uploader').click()">📷 Tomar Foto / Subir</button>
+
+    <div id="status">Esperando imagen...</div>
+    
+    <img id="preview" alt="Vista previa">
+
+    <div id="resultBox" class="detected-box">
+        <p>Número detectado:</p>
+        <div id="detectedText" class="detected-number">---</div>
+        <br>
+        <button id="downloadBtn" class="btn" style="background-color: #28a745;">💾 Guardar como ...</button>
+    </div>
+</div>
+
+<script>
+    const uploader = document.getElementById('uploader');
+    const preview = document.getElementById('preview');
+    const status = document.getElementById('status');
+    const resultBox = document.getElementById('resultBox');
+    const detectedText = document.getElementById('detectedText');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    let currentFile = null;
+    let detectedID = "";
+
+    uploader.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        currentFile = file;
+        
+        // Mostrar vista previa
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            preview.src = event.target.result;
+            preview.style.display = 'block';
+            startOCR(event.target.result);
+        }
+        reader.readAsDataURL(file);
+    });
+
+    async function startOCR(imageSrc) {
+        status.innerText = "⏳ Leyendo imagen... (esto puede tardar unos segundos)";
+        resultBox.style.display = 'none';
+        detectedID = "";
+
+        try {
+            // Ejecutar Tesseract
+            const { data: { text } } = await Tesseract.recognize(
+                imageSrc,
+                'eng', // Usamos inglés porque reconoce bien números. Se puede usar 'spa' también.
+                { logger: m => console.log(m) }
+            );
+
+            console.log("Texto crudo:", text);
+            findInvoiceNumber(text);
+
+        } catch (error) {
+            status.innerText = "❌ Error al leer la imagen.";
+            console.error(error);
+        }
+    }
+
+    function findInvoiceNumber(text) {
+        // Expresión regular para buscar "N°", "No", "Nota", seguido de dígitos
+        // Busca patrones como: N° 26759, N 26759, No. 26759
+        const regex = /(?:N[º°o]?\.?|Venta|Nota)\s*[:.\-]?\s*(\d{4,8})/i;
+        const match = text.match(regex);
+
+        if (match && match[1]) {
+            detectedID = match[1];
+            status.innerText = "✅ ¡Número encontrado!";
+            detectedText.innerText = detectedID;
+            
+            // Configurar botón de descarga
+            downloadBtn.onclick = downloadRenamedImage;
+            resultBox.style.display = 'block';
+        } else {
+            status.innerText = "⚠️ No pude encontrar un número claro (ej: N° 12345). Intenta acercar la foto.";
+            // Aún así permitimos guardar, pero pedimos nombre manual si quieres
+        }
+    }
+
+    function downloadRenamedImage() {
+        if (!currentFile || !detectedID) return;
+
+        // Crear enlace de descarga falso
+        const link = document.createElement('a');
+        link.href = preview.src;
+        // AQUÍ OCURRE LA MAGIA DEL RENOMBRAMIENTO
+        link.download = `${detectedID}.jpg`; 
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+</script>
+
+</body>
+</html>
